@@ -3,20 +3,34 @@
 
 CRUD + JWT Authentication in .NET (Clean Architecture)
 
-This is a demo project built with **ASP.NET Core Web API** that implements:
--  JWT-based Authentication and Authorization
--  CRUD Operations with Model Validation
--  Stored Procedure access using EF Core
--  Follows Clean Architecture Principles
+This is a demo project built with **ASP.NET Core 8 Web API**, showcasing:
+
+-  JWT-based Authentication and Authorization  
+-  CRUD Operations using **Dapper**  
+-  Clean Architecture Principles  
+-  SQL Server Integration  
+-  Model Validation using DTOs  
 
 ---
 
-
 ## Features
 
-- User Registration & Login
-- JWT Token Generation
-- Protected API Routes
-- Model Validation with Data Annotations
-- SQL Server Stored Procedure Integration
-- Clean separation of concerns
+- User Registration and Login
+- JWT Token Generation with Claims
+- Protected API Endpoints (Authorization Required)
+- CRUD for Users (Create, Read, Update, Delete)
+- Lightweight DB Access using Dapper
+- Clean folder separation with `DTOs`, `Interfaces`, `Services`, and `Controllers`
+
+---
+
+##  Tech Stack
+
+- ASP.NET Core 8
+- Dapper (Micro ORM)
+- SQL Server
+- JWT Authentication
+- Swagger (API Testing)
+- BCrypt for Password Hashing
+
+---
