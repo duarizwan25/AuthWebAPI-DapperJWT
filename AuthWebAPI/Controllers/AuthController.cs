@@ -1,7 +1,10 @@
-﻿using AuthWebAPI.Entities;
-using AuthWebAPI.Model;
-using AuthWebAPI.Services;
+﻿using AuthWebAPI.DTOs;
+using AuthWebAPI.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using AuthWebAPI.Models;
+using System.Data.SqlClient;
+using Dapper;
+using BCrypt.Net;
 
 namespace AuthWebAPI.Controllers
 {
@@ -9,42 +12,29 @@ namespace AuthWebAPI.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        private readonly IAuthService service;
+        private readonly IAuthService _authService;
 
-        public AuthController(IAuthService service)
+        public AuthController(IAuthService authService)
         {
-            this.service = service;
+            _authService = authService;
         }
 
         [HttpPost("register")]
-        public async Task<ActionResult<User?>> Register(UserDto request)
+        public async Task<IActionResult> Register(UserDto request)
         {
-            var user = await service.RegisterAsync(request);
-            if (user is null)
-                return BadRequest("Username already exists!");
-            return Ok(user);
+            var result = await _authService.RegisterAsync(request);
+            if (result == "User already exists.")
+                return BadRequest(result);
+            return Ok(result);
         }
 
         [HttpPost("login")]
-        public async Task<ActionResult<string>> Login(UserDto request)
+        public async Task<IActionResult> Login(UserDto request)
         {
-            var token = await service.LoginAsync(request);
-            if (token is null)
-                return BadRequest("Username/password is wrong");
-            return Ok(token);
-        }
-        [HttpGet("Auth-endpoint")]
-        [Microsoft.AspNetCore.Authorization.Authorize]
-        public ActionResult AuthCheck()
-        {
-            return Ok();
-        }
-
-        [HttpGet("Admin-endpoint")]
-        [Microsoft.AspNetCore.Authorization.Authorize(Roles ="Admin")]
-        public ActionResult AdminCheck()
-        {
-            return Ok();
+            var result = await _authService.LoginAsync(request);
+            if (result == "Username/password is wrong")
+                return BadRequest(result);
+            return Ok(result);
         }
     }
 }

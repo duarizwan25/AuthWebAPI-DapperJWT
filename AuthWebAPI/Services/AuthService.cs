@@ -1,81 +1,79 @@
-﻿using AuthWebAPI.Data;
-using AuthWebAPI.Entities;
-using AuthWebAPI.Model;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
+﻿using AuthWebAPI.DTOs;
+using AuthWebAPI.Interfaces;
+using AuthWebAPI.Models;
+using Dapper;
+using BCrypt.Net;
+using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
+using System.Data;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 
 namespace AuthWebAPI.Services
 {
-    public interface IAuthService
-    {
-        Task<User?> RegisterAsync(UserDto request);
-        Task<string?> LoginAsync(UserDto request);
-    }
-
     public class AuthService : IAuthService
     {
-        private readonly IConfiguration _configuration;
-        private readonly MyDbContext context;
+        private readonly IDbConnection _db;
+        private readonly IConfiguration _config;
 
-        public AuthService(IConfiguration configuration, MyDbContext context)
+        public AuthService(IDbConnection db, IConfiguration config)
         {
-            this._configuration = configuration;
-            this.context = context;
+            _db = db;
+            _config = config;
         }
 
-        public async Task<User?> RegisterAsync(UserDto request)
+        public async Task<string> RegisterAsync(UserDto request)
         {
-            if (await context.Users.AnyAsync(u => u.Username == request.Username))
-                return null;
+            var existingUser = await _db.QueryFirstOrDefaultAsync<UserModel>(
+                "SELECT * FROM Users WHERE Username = @Username", new { request.Username });
 
-            var user = new User
+            if (existingUser != null)
+                return "User already exists.";
+
+            var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+
+            string sql = "INSERT INTO Users (Id, Username, PasswordHash, Email, Roles) VALUES (@Id, @Username, @PasswordHash, @Email, @Roles)";
+            var newUser = new UserModel
             {
+                Id = Guid.NewGuid(),
                 Username = request.Username,
-                PasswordHash = new PasswordHasher<User>().HashPassword(null, request.Password)      
+                PasswordHash = passwordHash,
+                Email = request.Username + "@example.com",
+                Roles = "User"
             };
 
-
-            context.Users.Add(user);
-            await context.SaveChangesAsync();
-            return user;
+            await _db.ExecuteAsync(sql, newUser);
+            return "User created successfully.";
         }
 
-        public async Task<string?> LoginAsync(UserDto request)
+        public async Task<string> LoginAsync(UserDto request)
         {
-            User? user = await context.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
-            if (user is null)
-                return null;
+            var user = await _db.QueryFirstOrDefaultAsync<UserModel>(
+                "SELECT * FROM Users WHERE Username = @Username", new { request.Username });
 
-            var result = new PasswordHasher<User>().VerifyHashedPassword(null, user.PasswordHash, request.Password);
-            if (result == PasswordVerificationResult.Failed)
-                return null;
+            if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+                return "Username/password is wrong";
 
             return CreateToken(user);
         }
 
-        private string CreateToken(User user)
+        private string CreateToken(UserModel user)
         {
-            var claims = new List<Claim>
+            var claims = new[]
             {
                 new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Role, user.Roles)
             };
 
-            var key = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(_configuration["AppSettings:Token"]));
-
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["AppSettings:Token"]));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
 
             var token = new JwtSecurityToken(
-                issuer: _configuration["AppSettings:Issuer"],
-                audience: _configuration["AppSettings:Audience"],
+                issuer: _config["AppSettings:Issuer"],
+                audience: _config["AppSettings:Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddDays(1),
+                expires: DateTime.Now.AddDays(1),
                 signingCredentials: creds
             );
 

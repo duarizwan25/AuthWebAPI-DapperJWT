@@ -1,11 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using AuthWebAPI.Data;
-using EntityUser = AuthWebAPI.Entities.User;
-using AuthWebAPI.Models;
-using AuthWebAPI.Entities;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Authorization;
-
+using AuthWebAPI.Models;
+using System.Data.SqlClient;
+using Dapper;
 
 namespace AuthWebAPI.Controllers
 {
@@ -14,58 +12,42 @@ namespace AuthWebAPI.Controllers
     [Authorize]
     public class UserController : ControllerBase
     {
-        private readonly MyDbContext _context;
+        private readonly string _connectionString;
 
-        public UserController(MyDbContext context)
+        public UserController(IConfiguration configuration)
         {
-            _context = context;
+            _connectionString = configuration.GetConnectionString("MyDB");
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<UserModel>>> GetUsers()
         {
-            var users = await _context.Users.ToListAsync();
-            var result = users.Select(u => new UserModel
-            {
-                Id = u.Id,
-                Username = u.Username,
-                Email = u.Email
-            }).ToList();
-
-            return Ok(result);
+            using var connection = new SqlConnection(_connectionString);
+            var users = await connection.QueryAsync<UserModel>("SELECT Id, Username, Email FROM Users");
+            return Ok(users);
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<UserModel>> GetUser(Guid id)
         {
-            var user = await _context.Users.FindAsync(id);
+            using var connection = new SqlConnection(_connectionString);
+            var user = await connection.QuerySingleOrDefaultAsync<UserModel>(
+                "SELECT Id, Username, Email FROM Users WHERE Id = @Id", new { Id = id });
+
             if (user == null) return NotFound();
-
-            var userModel = new UserModel
-            {
-                Id = user.Id,
-                Username = user.Username,
-                Email = user.Email
-            };
-
-            return Ok(userModel);
+            return Ok(user);
         }
 
         [HttpPost]
         public async Task<ActionResult<UserModel>> CreateUser(UserModel userModel)
         {
-            var user = new User
-            {
-                Id = Guid.NewGuid(),
-                Username = userModel.Username,
-                Email = userModel.Email
-            };
+            userModel.Id = Guid.NewGuid();
 
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
+            using var connection = new SqlConnection(_connectionString);
+            var sql = "INSERT INTO Users (Id, Username, Email) VALUES (@Id, @Username, @Email)";
+            await connection.ExecuteAsync(sql, userModel);
 
-            userModel.Id = user.Id;
-            return CreatedAtAction(nameof(GetUser), new { id = user.Id }, userModel);
+            return CreatedAtAction(nameof(GetUser), new { id = userModel.Id }, userModel);
         }
 
         [HttpPut("{id}")]
@@ -73,25 +55,22 @@ namespace AuthWebAPI.Controllers
         {
             if (id != userModel.Id) return BadRequest();
 
-            var user = await _context.Users.FindAsync(id);
-            if (user == null) return NotFound();
+            using var connection = new SqlConnection(_connectionString);
+            var sql = "UPDATE Users SET Username = @Username, Email = @Email WHERE Id = @Id";
+            var affected = await connection.ExecuteAsync(sql, userModel);
 
-            user.Username = userModel.Username;
-            user.Email = userModel.Email;
-
-            await _context.SaveChangesAsync();
+            if (affected == 0) return NotFound();
             return NoContent();
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteUser(Guid id)
         {
-            var user = await _context.Users.FindAsync(id);
-            if (user == null) return NotFound();
+            using var connection = new SqlConnection(_connectionString);
+            var sql = "DELETE FROM Users WHERE Id = @Id";
+            var affected = await connection.ExecuteAsync(sql, new { Id = id });
 
-            _context.Users.Remove(user);
-            await _context.SaveChangesAsync();
-
+            if (affected == 0) return NotFound();
             return NoContent();
         }
     }
